@@ -6,3 +6,5 @@ BUPT's group project of Internet application.
 参考资料：
 1. https://www.geeksforgeeks.org/socket-programming-cc/ 入门 socket programming 
 2. https://blog.csdn.net/u011641885/article/details/50449086 auth: Linux c 验证linux 用户密码
+
+readme

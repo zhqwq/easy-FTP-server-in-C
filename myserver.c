@@ -1,11 +1,14 @@
 #include <stdio.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include <arpa/inet.h>
 #include <stdlib.h> //for atoi()
 #include <string.h>
 #include <unistd.h>
 #include <shadow.h> // for getspnam()
 #include <errno.h>
+
 
 
 int socket_create(int port){
@@ -133,7 +136,23 @@ void ser_cwd(int sock, char* path){
         send(sock, tip550, sizeof(tip550),0);
         perror("550");
     }
+}
 
+void ser_mkd(int sock, char* path){
+    char buf[256];
+    memset(buf, '\0', sizeof(buf));
+    char tip550[256] = "550 Create directory operation failed.\n";
+    char tip257[256] = "257 ";
+    
+    strcpy(buf,getcwd(NULL,0));
+    strcat(buf,path);
+    if(mkdir(buf, S_IRWXU)==0){
+        strcat(tip257,buf);
+        strcat(tip257," created \n");
+        send(sock, tip257,strlen(tip257), 0);
+    }else{
+        send(sock, tip550,sizeof(tip550), 0);
+    }
 }
 
 int main(int argc,char *argv[]){
@@ -162,11 +181,13 @@ int main(int argc,char *argv[]){
             ser_pwd(clt_sock);
         }
         if(strstr(buf, "CWD")!=NULL){ // 不严谨但省事
-            char *path;
             buf[result - 2] = '\0';
-            path = buf + 4;
-            ser_cwd(clt_sock, path);
-        } 
+            ser_cwd(clt_sock, buf + 4);
+        }
+        if(strstr(buf, "MKD")!=NULL){
+            buf[result - 2] = '\0';
+            ser_mkd(clt_sock, buf + 4);
+        }  
     }
     
     close(clt_sock);

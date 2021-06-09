@@ -213,35 +213,55 @@ int data_connect(int sock, int port){
         return -1;
     }
 
+    return data_sock;
+}
+
+int ser_port(int sock, char* addr){
+    char buf[256];
+    memset(buf,'\0',sizeof(buf));
+    printf("准备连接客户端端口\n");
+    int address[7];
+    memset(address,'\0',7);
+    char* token = strtok(addr, ",");
+    address[0] = atoi(token);
+    int i = 1;
+    while (token!=NULL && i<=5)
+    {
+        token = strtok(NULL,",");
+        address[i] = atoi(token);
+        i++;
+    }
+    
+    int port = address[4]*256 + address[5];
+    int data_sock = data_connect(sock, port);
+    printf("最后两位数%d,%d,新端口号为%d\n", address[4],address[5],port);
     strcpy(buf, "200 PORT command successful.\n");
     send(sock, buf, sizeof(buf), 0);
     return data_sock;
 }
 
-int ser_port(int sock, char* buf){
-    char tip200[256] = "200 PORT command successful.\n";
-    int address[7];
-    char* token = strtok(buf+5, ",");
-    address[0] = atoi(token);
-    int i;
-    for(i=1;token!=NULL;i++){
-        token = strtok(NULL,",");
-        address[i] = atoi(token);
-    }
-    int port = address[4]*256 + address[5];
-    int data_sock = data_connect(sock, port);
-    printf("最后两位数%d,%d,新端口号为%d", address[4],address[5],port);
-    return data_sock;
-}
-
 void ser_ls(int clt_sock, int data_sock){
-    char buf[256];
-    memset(buf, '\0', sizeof(buf));
-    strcpy(buf,"150 Here comes the directory listing.\n");
-    if((system("ls -l | tail -n+2 > ls.txt"))<0){
-        printf("system error.\n");
-        exit(-1);
+    char tip150[256] = "150 Here comes the directory listing.\n";
+    char tip226[256] = "226 Directory send OK.\n";
+    char data[256];
+    size_t num_read;    
+    memset(data,'\0', sizeof(data));
+    system("ls -l | tail -n+2 > ls.txt");
+    send(clt_sock,tip150,sizeof(tip150),0); //send 150 to clitent
+    FILE* fd = fopen("ls.txt","r");
+    fseek(fd, SEEK_SET, 0);
+
+    /* 通过数据连接，发送ls.txt 文件的内容 */
+    while ((num_read = fread(data, 1, 256, fd)) > 0) 
+    {
+        if (send(data_sock, data, num_read, 0) < 0) 
+            perror("err");
+        memset(data, 0, 256);
     }
+    fclose(fd);
+    close(data_sock);
+    send(clt_sock, tip226,sizeof(tip226),0);    // 发送应答码 226（关闭数据连接，请求的文件操作成功）  
+    
 }
 int main(int argc,char *argv[]){
     //initial
@@ -296,14 +316,16 @@ int main(int argc,char *argv[]){
             ser_rnto(clt_sock, oldname, buf + 5);
         }
         if(strstr(buf, "PORT")!=NULL){
+            buf[result - 2] = '\0';
+            printf("%s\n",buf+5);
+            data_sock = ser_port(clt_sock, buf+5);
+
             //PORT 127,0,0,1,249,108  (port = 249*256 + 108)
             //200 PORT command successful
             //LIST
             //150 Here comes the directory listing.
             //data
             //226 Directory send OK.
-            buf[result - 2] = '\0';
-            data_sock = ser_port(clt_sock, buf+5);
         }
         if(strstr(buf, "LIST")!=NULL){
             ser_ls(clt_sock, data_sock);

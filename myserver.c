@@ -191,11 +191,11 @@ void ser_rnto(int sock, char* oldname, char* newname){
     }
 }
 int data_connect(int sock, int port){
-
-    pirntf("进行Active数据连接\n");
+    printf("进行Active数据连接\n");
+    int data_sock;
     char buf[256];
     memset(buf, 0, sizeof(buf));
-    if ((int data_sock = socket(AF_INET, SOCK_STREAM, 0)) < 0)
+    if ((data_sock = socket(AF_INET, SOCK_STREAM, 0)) < 0)
     { 
             perror("error: creating socket.\n");
             return -1;
@@ -214,15 +214,15 @@ int data_connect(int sock, int port){
     }
 
     strcpy(buf, "200 PORT command successful.\n");
-    send(sock_control, buf, sizeof(buf), 0);
+    send(sock, buf, sizeof(buf), 0);
     return data_sock;
 }
 
 int ser_port(int sock, char* buf){
     char tip200[256] = "200 PORT command successful.\n";
     int address[7];
-    token = strtok(buf+5, ",");
-    address[0] = atoi();
+    char* token = strtok(buf+5, ",");
+    address[0] = atoi(token);
     int i;
     for(i=1;token!=NULL;i++){
         token = strtok(NULL,",");

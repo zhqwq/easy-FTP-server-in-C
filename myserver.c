@@ -10,6 +10,7 @@
 #include <errno.h>
 
 
+
 int socket_create(int port){
     int sockfd;
     int yes = 1;
@@ -162,6 +163,46 @@ void ser_del(int sock, char* path){
     
     if(remove(path)==0){
         send(sock, tip250,strlen(tip250), 0);
+    }else{
+        send(sock, tip550,sizeof(tip550), 0);
+    }
+}
+
+void ser_pwd(int sock){
+    char buf[256];
+    memset(buf, '\0', sizeof(buf));
+    char a[256];
+    memset(a, '\0', sizeof(a));
+    strcpy(a,"257 The current diretory is "); // a = "257 The current diretory is "
+    getcwd(buf, sizeof(buf));                 // buf = "/mnt/c/Users/ASUS/Desktop/ftp"
+    strcat(a,buf);                            // a = "257 The current diretory is /mnt/c/Users/ASUS/Desktop/ftp"
+    strcat(a,"\n");                           
+    send(sock, a, sizeof(a), 0);
+}
+
+void ser_cwd(int sock, char* path){
+    char tip250[] = "250 Directory successfully changed\n";
+    char tip550[] = "550 Failed to change directory!\n";
+    if(chdir(path) >= 0) //更换目录成功
+        send(sock, tip250, sizeof(tip250),0);
+    else{
+        send(sock, tip550, sizeof(tip550),0);
+        perror("550");
+    }
+}
+
+void ser_mkd(int sock, char* path){
+    char buf[256];
+    memset(buf, '\0', sizeof(buf));
+    char tip550[256] = "550 Create directory operation failed.\n";
+    char tip257[256] = "257 ";
+    
+    strcpy(buf,getcwd(NULL,0));
+    strcat(buf,path);
+    if(mkdir(buf, S_IRWXU)==0){
+        strcat(tip257,buf);
+        strcat(tip257," created \n");
+        send(sock, tip257,strlen(tip257), 0);
     }else{
         send(sock, tip550,sizeof(tip550), 0);
     }

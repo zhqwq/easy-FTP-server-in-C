@@ -1,5 +1,5 @@
-# easy-FTP-server-in-C
-BUPT's group project of Internet application.
+## implementation:
+PWD,CWD,MKD,QUIT
 
 ![image](https://user-images.githubusercontent.com/56614895/121205636-6c2fce80-c8aa-11eb-805b-b0f93569c887.png)
 

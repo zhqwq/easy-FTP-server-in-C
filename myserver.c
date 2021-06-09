@@ -11,6 +11,7 @@
 
 
 
+
 int socket_create(int port){
     int sockfd;
     int yes = 1;
@@ -142,7 +143,7 @@ void ser_mkd(int sock, char* path){
     char buf[256];
     memset(buf, '\0', sizeof(buf));
     char tip550[256] = "550 Create directory operation failed.\n";
-    char tip257[256] = "257 ";
+    char tip257[256] = "257  ";
     
     strcpy(buf,getcwd(NULL,0));
     strcat(buf,path);
@@ -150,6 +151,17 @@ void ser_mkd(int sock, char* path){
         strcat(tip257,buf);
         strcat(tip257," created \n");
         send(sock, tip257,strlen(tip257), 0);
+    }else{
+        send(sock, tip550,sizeof(tip550), 0);
+    }
+}
+
+void ser_del(int sock, char* path){
+    char tip550[256] = "550 Delete operation failed.\n";
+    char tip250[256] = "250 Delete operation successful.\n";
+    
+    if(remove(path)==0){
+        send(sock, tip250,strlen(tip250), 0);
     }else{
         send(sock, tip550,sizeof(tip550), 0);
     }
@@ -187,7 +199,11 @@ int main(int argc,char *argv[]){
         if(strstr(buf, "MKD")!=NULL){
             buf[result - 2] = '\0';
             ser_mkd(clt_sock, buf + 4);
-        }  
+        }
+        if(strstr(buf, "DELE")!=NULL){
+            buf[result - 2] = '\0';
+            ser_del(clt_sock, buf + 5);
+        }
     }
     
     close(clt_sock);

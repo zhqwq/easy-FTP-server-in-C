@@ -1,11 +1,14 @@
 #include <stdio.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
+#include <sys/types.h>
 #include <arpa/inet.h>
 #include <stdlib.h> //for atoi()
 #include <string.h>
 #include <unistd.h>
 #include <shadow.h> // for getspnam()
 #include <errno.h>
+
 
 
 int socket_create(int port){
@@ -68,47 +71,88 @@ void auth(int sock){
     int result;
     char buf[256];
     memset(buf,'\0',sizeof(buf)); //填充'0'结束符 防止printf输出奇奇怪怪的东西
-    char tip[] = "Login failed";
+
+    //服务器向Client发送响应码
+    char tip[] = "Login failed\n";
     char tip220[] = "220 Welcome to Easy FTP server. Please enter username.\n"; //220 status code
-    char tip331[] = "331 Please specify the password\n";
-    char tip230[] = "230 Login successful\n";
-    char tip530[] = "530 Login incorrect\n";
+    char tip331[] = "331 Please specify the password\n"; //要求密码
+    char tip230[] = "230 Login successful\n"; //成功登录
+    char tip530[] = "530 Login incorrect\n"; // 登陆错误
+    char tip215[] = "215 UNIX Type: L8\r\n"; //系统类型
     
-    send(sock, tip220, sizeof(tip220), 0);
-
-    do{
-        result = recv(sock, buf, sizeof(buf), 0);
-        if ( result > 0 ){
-            printf("Bytes received: %d\n", result);//12
-            printf("buf:%s",buf+5); //USER zhqwq/r/n
-            buf[result-2] = '\0';
-
-            if((sp = getspnam(buf+5)) == NULL){// 用户名错误
-                send(sock, tip530, sizeof(tip530), 0);
-                send(sock, tip, sizeof(tip), 0);
-                break;
-            }else{ //用户名输入正确，提示输入密码
-                send(sock, tip331, sizeof(tip331), 0);
-            }
-            result = recv(sock, buf, sizeof(buf), 0);
-            buf[result-2] = '\0';
-            printf("Bytes received: %d\n", result); //17
-            printf("buf:%s",buf); //PASS Zhang12345
-            if(strcmp(sp->sp_pwdp, (char*)crypt(buf+5, sp->sp_pwdp))==0){
-                send(sock, tip230, sizeof(tip230), 0);
-                break;
-            }else{
-                send(sock, tip530, sizeof(tip530), 0);
-                send(sock, tip, sizeof(tip), 0);
-                break; 
-            }
+    send(sock, tip220, sizeof(tip220), 0); //print:220 Please enter username
+    
+    //验证Linux用户与密码
+   
+    if ( (result = recv(sock, buf, sizeof(buf), 0)) > 0 ){
+        buf[result-2] = '\0'; // 替换末尾 /r/n 为\0\n 使得字符串正确结尾
+        if((sp = getspnam(buf+5)) == NULL){
+            send(sock, tip530, sizeof(tip530), 0); //print: Login incorrect
+            send(sock, tip, sizeof(tip), 0); //print: Login failed
+            close(sock);
         }
-        else if ( result == 0 )
-            printf("Connection closed\n");
-        else
-            printf("recv failed: \n");
-    }while(result > 0);
+        send(sock, tip331, sizeof(tip331), 0); //print: 331 Please specify the password
+        result = recv(sock, buf, sizeof(buf), 0);
+        buf[result-2] = '\0';
+        if(strcmp(sp->sp_pwdp, (char*)crypt(buf+5, sp->sp_pwdp))==0){
+            send(sock, tip230, sizeof(tip230), 0);
+            if(recv(sock, buf, sizeof(buf), 0) > 0) //接受SYST
+                send(sock, tip215, sizeof(tip215), 0); 
+        }else{
+            send(sock, tip530, sizeof(tip530), 0);
+            send(sock, tip, sizeof(tip), 0);
+            close(sock); 
+        }
+    }
+    else if ( result == 0 ){
+        printf("Connection closed\n");
+        close(sock); 
+    }
+    else{
+        printf("recv failed: \n");
+        close(sock);
+    }
     
+}
+
+void ser_pwd(int sock){
+    char buf[256];
+    memset(buf, '\0', sizeof(buf));
+    char a[256];
+    memset(a, '\0', sizeof(a));
+    strcpy(a,"257 The current diretory is "); // a = "257 The current diretory is "
+    getcwd(buf, sizeof(buf));                 // buf = "/mnt/c/Users/ASUS/Desktop/ftp"
+    strcat(a,buf);                            // a = "257 The current diretory is /mnt/c/Users/ASUS/Desktop/ftp"
+    strcat(a,"\n");                           
+    send(sock, a, sizeof(a), 0);
+}
+
+void ser_cwd(int sock, char* path){
+    char tip250[] = "250 Directory successfully changed\n";
+    char tip550[] = "550 Failed to change directory!\n";
+    if(chdir(path) >= 0) //更换目录成功
+        send(sock, tip250, sizeof(tip250),0);
+    else{
+        send(sock, tip550, sizeof(tip550),0);
+        perror("550");
+    }
+}
+
+void ser_mkd(int sock, char* path){
+    char buf[256];
+    memset(buf, '\0', sizeof(buf));
+    char tip550[256] = "550 Create directory operation failed.\n";
+    char tip257[256] = "257 ";
+    
+    strcpy(buf,getcwd(NULL,0));
+    strcat(buf,path);
+    if(mkdir(buf, S_IRWXU)==0){
+        strcat(tip257,buf);
+        strcat(tip257," created \n");
+        send(sock, tip257,strlen(tip257), 0);
+    }else{
+        send(sock, tip550,sizeof(tip550), 0);
+    }
 }
 
 int main(int argc,char *argv[]){
@@ -116,8 +160,35 @@ int main(int argc,char *argv[]){
     int port = 21; // port 21 for FTP
     int ser_sock = socket_create(port); // socket() - setsockopt() - bind() - lienten()
     int clt_sock = socket_accept(ser_sock); // accept()
+    char tip221[] = "221 GoodBye!\n";
 
     //authentication
     auth(clt_sock);
+
+    //循环等待命令
+    int result;
+    char buf[256];
+    while(1){
+        memset(buf, '\0', sizeof(buf));
+        result = recv(clt_sock, buf, sizeof(buf), 0); //example: PORT 127,0,0,1,249,108 所以 port = 249*256 + 108
+        if(buf!=NULL)
+            printf("recv:%s\n",buf);
+        if(strcmp(buf,"QUIT\r\n")==0){
+            send(clt_sock, tip221, sizeof(tip221), 0);
+            break;
+        }
+        if(strcmp(buf,"PWD\r\n")==0){
+            ser_pwd(clt_sock);
+        }
+        if(strstr(buf, "CWD")!=NULL){ // 不严谨但省事
+            buf[result - 2] = '\0';
+            ser_cwd(clt_sock, buf + 4);
+        }
+        if(strstr(buf, "MKD")!=NULL){
+            buf[result - 2] = '\0';
+            ser_mkd(clt_sock, buf + 4);
+        }  
+    }
+    
     close(clt_sock);
 }

@@ -9,9 +9,6 @@
 #include <shadow.h> // for getspnam()
 #include <errno.h>
 
-
-
-
 int socket_create(int port){
     int sockfd;
     int yes = 1;
@@ -64,6 +61,7 @@ int socket_accept(int sock){
         perror("accept() error");
         return -1;
     }
+    printf("Accept client %s on TCP Port %d\n", inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
     return sockfd;
 }
 
@@ -87,6 +85,7 @@ void auth(int sock){
    
     if ( (result = recv(sock, buf, sizeof(buf), 0)) > 0 ){
         buf[result-2] = '\0'; // 替换末尾 /r/n 为\0\n 使得字符串正确结尾
+        printf("Receive username: %s\n", buf+5);
         if((sp = getspnam(buf+5)) == NULL){
             send(sock, tip530, sizeof(tip530), 0); //print: Login incorrect
             send(sock, tip, sizeof(tip), 0); //print: Login failed
@@ -167,6 +166,83 @@ void ser_del(int sock, char* path){
     }
 }
 
+void ser_rnfr(int sock, char* name){
+    char buf[256];
+    memset(buf,'\0',sizeof(buf));
+    FILE *fp;
+    if((fp=fopen(name,"r"))==NULL){
+        strcpy(buf,"550 Failed to rename.\n");
+        send(sock, buf, sizeof(buf),0);
+    } 
+    else{
+        strcpy(buf,"350 Ready for RNTO.\n");
+        send(sock, buf, sizeof(buf),0);
+    }
+}
+
+void ser_rnto(int sock, char* oldname, char* newname){
+    char buf[256];
+    if(rename(oldname,newname)==0){
+        strcpy(buf, "250 Rename successful.\n");
+        send(sock, buf, strlen(buf), 0);
+    }else{
+        strcpy(buf,"550 Failed to rename\n");
+        send(sock, buf, strlen(buf), 0);
+    }
+}
+int data_connect(int sock, int port){
+
+    pirntf("进行Active数据连接\n");
+    char buf[256];
+    memset(buf, 0, sizeof(buf));
+    if ((int data_sock = socket(AF_INET, SOCK_STREAM, 0)) < 0)
+    { 
+            perror("error: creating socket.\n");
+            return -1;
+    }
+
+    struct sockaddr_in dest_addr;
+    memset(&dest_addr, 0, sizeof(dest_addr));
+    dest_addr.sin_family = AF_INET;
+    dest_addr.sin_port = htons(port);
+    dest_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
+
+    if(connect(data_sock, (struct sockaddr *)&dest_addr, sizeof(dest_addr)) < 0 )
+    {
+        perror("error: connecting to server.\n");
+        return -1;
+    }
+
+    strcpy(buf, "200 PORT command successful.\n");
+    send(sock_control, buf, sizeof(buf), 0);
+    return data_sock;
+}
+
+int ser_port(int sock, char* buf){
+    char tip200[256] = "200 PORT command successful.\n";
+    int address[7];
+    token = strtok(buf+5, ",");
+    address[0] = atoi();
+    int i;
+    for(i=1;token!=NULL;i++){
+        token = strtok(NULL,",");
+        address[i] = atoi(token);
+    }
+    int port = address[4]*256 + address[5];
+    int data_sock = data_connect(sock, port);
+    printf("最后两位数%d,%d,新端口号为%d", address[4],address[5],port);
+    return data_sock;
+}
+
+void ser_ls(int clt_sock, int data_sock){
+    char buf[256];
+    memset(buf, '\0', sizeof(buf));
+    strcpy(buf,"150 Here comes the directory listing.\n");
+    if((system("ls -l | tail -n+2 > ls.txt"))<0){
+        printf("system error.\n");
+        exit(-1);
+    }
+}
 int main(int argc,char *argv[]){
     //initial
     int port = 21; // port 21 for FTP
@@ -180,9 +256,11 @@ int main(int argc,char *argv[]){
     //循环等待命令
     int result;
     char buf[256];
+    char oldname[256];
+    int data_sock;
     while(1){
         memset(buf, '\0', sizeof(buf));
-        result = recv(clt_sock, buf, sizeof(buf), 0); //example: PORT 127,0,0,1,249,108 所以 port = 249*256 + 108
+        result = recv(clt_sock, buf, sizeof(buf), 0); 
         if(buf!=NULL)
             printf("recv:%s\n",buf);
         if(strcmp(buf,"QUIT\r\n")==0){
@@ -203,6 +281,32 @@ int main(int argc,char *argv[]){
         if(strstr(buf, "DELE")!=NULL){
             buf[result - 2] = '\0';
             ser_del(clt_sock, buf + 5);
+        }
+        if(strstr(buf, "RNFR")!=NULL){
+            //RNFR a.c
+            //350 Ready for RNTO
+            //RNTO b.c
+            //250 Rename successful
+            buf[result - 2] = '\0';
+            strcpy(oldname,buf + 5);
+            ser_rnfr(clt_sock, buf + 5);
+        }
+        if(strstr(buf, "RNTO")!=NULL){
+            buf[result - 2] = '\0';
+            ser_rnto(clt_sock, oldname, buf + 5);
+        }
+        if(strstr(buf, "PORT")!=NULL){
+            //PORT 127,0,0,1,249,108  (port = 249*256 + 108)
+            //200 PORT command successful
+            //LIST
+            //150 Here comes the directory listing.
+            //data
+            //226 Directory send OK.
+            buf[result - 2] = '\0';
+            data_sock = ser_port(clt_sock, buf+5);
+        }
+        if(strstr(buf, "LIST")!=NULL){
+            ser_ls(clt_sock, data_sock);
         }
     }
     

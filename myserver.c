@@ -144,9 +144,10 @@ void ser_mkd(int sock, char* path){
     char tip550[256] = "550 Create directory operation failed.\n";
     char tip257[256] = "257  ";
     
-    strcpy(buf,getcwd(NULL,0));
+    strcpy(buf,getcwd(NULL,0));//buf = work dir
+    strcat(buf,"/");
     strcat(buf,path);
-    if(mkdir(buf, S_IRWXU)==0){
+    if(mkdir(path, S_IRWXU)==0){
         strcat(tip257,buf);
         strcat(tip257," created \n");
         send(sock, tip257,strlen(tip257), 0);
@@ -190,6 +191,7 @@ void ser_rnto(int sock, char* oldname, char* newname){
         send(sock, buf, strlen(buf), 0);
     }
 }
+
 int data_connect(int sock, int port){
     printf("进行Active数据连接\n");
     int data_sock;
@@ -261,8 +263,16 @@ void ser_ls(int clt_sock, int data_sock){
     fclose(fd);
     close(data_sock);
     send(clt_sock, tip226,sizeof(tip226),0);    // 发送应答码 226（关闭数据连接，请求的文件操作成功）  
-    
+
 }
+
+void ser_get(int clt_sock, int date_sock, char* name){
+    char tip150[256] = "150 Opening ASCII mode data connection for ";
+    strcat(tip150, name);
+    //150 Opening BINARY mode data connection for file.hole (50 bytes).
+    char tip226[256] = "Transfer complete";
+}
+
 int main(int argc,char *argv[]){
     //initial
     int port = 21; // port 21 for FTP
@@ -329,6 +339,10 @@ int main(int argc,char *argv[]){
         }
         if(strstr(buf, "LIST")!=NULL){
             ser_ls(clt_sock, data_sock);
+        }
+
+        if(strstr(buf, "RETR")!=NULL){
+            ser_get(clt_sock, data_sock, buf + 4);
         }
     }
     

@@ -1,6 +1,3 @@
-# easy-FTP-server-in-C
-BUPT's group project of Internet application.
-
 ## implementation:
 PWD,CWD,MKD,QUIT,DELE,LIST
 

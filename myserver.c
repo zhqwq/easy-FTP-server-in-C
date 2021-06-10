@@ -9,8 +9,6 @@
 #include <shadow.h> // for getspnam()
 #include <errno.h>
 
-
-
 int socket_create(int port){
     int sockfd;
     int yes = 1;
@@ -85,7 +83,7 @@ void auth(int sock){
     
     //验证Linux用户与密码
    
-    if((result = recv(sock, buf, sizeof(buf), 0)) > 0 ){
+    if ( (result = recv(sock, buf, sizeof(buf), 0)) > 0 ){
         buf[result-2] = '\0'; // 替换末尾 /r/n 为\0\n 使得字符串正确结尾
         printf("Receive username: %s\n", buf+5);
         if((sp = getspnam(buf+5)) == NULL){
@@ -97,12 +95,12 @@ void auth(int sock){
         result = recv(sock, buf, sizeof(buf), 0);
         buf[result-2] = '\0';
         if(strcmp(sp->sp_pwdp, (char*)crypt(buf+5, sp->sp_pwdp))==0){
-            send(sock, tip230, sizeof(tip230), 0); //print: 220 Welcome to Easy FTP server. Please enter username.
+            send(sock, tip230, sizeof(tip230), 0);
             if(recv(sock, buf, sizeof(buf), 0) > 0) //接受SYST
-                send(sock, tip215, sizeof(tip215), 0); //print: 215 UNIX Type: L8\r\n
+                send(sock, tip215, sizeof(tip215), 0); 
         }else{
-            send(sock, tip530, sizeof(tip530), 0); //print: 530 Login incorrect
-            send(sock, tip, sizeof(tip), 0); //print: Login failed
+            send(sock, tip530, sizeof(tip530), 0);
+            send(sock, tip, sizeof(tip), 0);
             close(sock); 
         }
     }
@@ -146,9 +144,10 @@ void ser_mkd(int sock, char* path){
     char tip550[256] = "550 Create directory operation failed.\n";
     char tip257[256] = "257  ";
     
-    strcpy(buf,getcwd(NULL,0));
+    strcpy(buf,getcwd(NULL,0));//buf = work dir
+    strcat(buf,"/");
     strcat(buf,path);
-    if(mkdir(buf, S_IRWXU)==0){
+    if(mkdir(path, S_IRWXU)==0){
         strcat(tip257,buf);
         strcat(tip257," created \n");
         send(sock, tip257,strlen(tip257), 0);
@@ -168,44 +167,109 @@ void ser_del(int sock, char* path){
     }
 }
 
-void ser_pwd(int sock){
+void ser_rnfr(int sock, char* name){
     char buf[256];
-    memset(buf, '\0', sizeof(buf));
-    char a[256];
-    memset(a, '\0', sizeof(a));
-    strcpy(a,"257 The current diretory is "); // a = "257 The current diretory is "
-    getcwd(buf, sizeof(buf));                 // buf = "/mnt/c/Users/ASUS/Desktop/ftp"
-    strcat(a,buf);                            // a = "257 The current diretory is /mnt/c/Users/ASUS/Desktop/ftp"
-    strcat(a,"\n");                           
-    send(sock, a, sizeof(a), 0);
-}
-
-void ser_cwd(int sock, char* path){
-    char tip250[] = "250 Directory successfully changed\n";
-    char tip550[] = "550 Failed to change directory!\n";
-    if(chdir(path) >= 0) //更换目录成功
-        send(sock, tip250, sizeof(tip250),0);
+    memset(buf,'\0',sizeof(buf));
+    FILE *fp;
+    if((fp=fopen(name,"r"))==NULL){
+        strcpy(buf,"550 Failed to rename.\n");
+        send(sock, buf, sizeof(buf),0);
+    } 
     else{
-        send(sock, tip550, sizeof(tip550),0);
-        perror("550");
+        strcpy(buf,"350 Ready for RNTO.\n");
+        send(sock, buf, sizeof(buf),0);
     }
 }
 
-void ser_mkd(int sock, char* path){
+void ser_rnto(int sock, char* oldname, char* newname){
     char buf[256];
-    memset(buf, '\0', sizeof(buf));
-    char tip550[256] = "550 Create directory operation failed.\n";
-    char tip257[256] = "257 ";
-    
-    strcpy(buf,getcwd(NULL,0));
-    strcat(buf,path);
-    if(mkdir(buf, S_IRWXU)==0){
-        strcat(tip257,buf);
-        strcat(tip257," created \n");
-        send(sock, tip257,strlen(tip257), 0);
+    if(rename(oldname,newname)==0){
+        strcpy(buf, "250 Rename successful.\n");
+        send(sock, buf, strlen(buf), 0);
     }else{
-        send(sock, tip550,sizeof(tip550), 0);
+        strcpy(buf,"550 Failed to rename\n");
+        send(sock, buf, strlen(buf), 0);
     }
+}
+
+int data_connect(int sock, int port){
+    printf("进行Active数据连接\n");
+    int data_sock;
+    char buf[256];
+    memset(buf, 0, sizeof(buf));
+    if ((data_sock = socket(AF_INET, SOCK_STREAM, 0)) < 0)
+    { 
+            perror("error: creating socket.\n");
+            return -1;
+    }
+
+    struct sockaddr_in dest_addr;
+    memset(&dest_addr, 0, sizeof(dest_addr));
+    dest_addr.sin_family = AF_INET;
+    dest_addr.sin_port = htons(port);
+    dest_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
+
+    if(connect(data_sock, (struct sockaddr *)&dest_addr, sizeof(dest_addr)) < 0 )
+    {
+        perror("error: connecting to server.\n");
+        return -1;
+    }
+
+    return data_sock;
+}
+
+int ser_port(int sock, char* addr){
+    char buf[256];
+    memset(buf,'\0',sizeof(buf));
+    printf("准备连接客户端端口\n");
+    int address[7];
+    memset(address,'\0',7);
+    char* token = strtok(addr, ",");
+    address[0] = atoi(token);
+    int i = 1;
+    while (token!=NULL && i<=5)
+    {
+        token = strtok(NULL,",");
+        address[i] = atoi(token);
+        i++;
+    }
+    
+    int port = address[4]*256 + address[5];
+    int data_sock = data_connect(sock, port);
+    printf("最后两位数%d,%d,新端口号为%d\n", address[4],address[5],port);
+    strcpy(buf, "200 PORT command successful.\n");
+    send(sock, buf, sizeof(buf), 0);
+    return data_sock;
+}
+
+void ser_ls(int clt_sock, int data_sock){
+    char tip150[256] = "150 Here comes the directory listing.\n";
+    char tip226[256] = "226 Directory send OK.\n";
+    char data[256];
+    size_t num_read;    
+    memset(data,'\0', sizeof(data));
+    system("ls -l | tail -n+2 > ls.txt");
+    send(clt_sock,tip150,sizeof(tip150),0); //send 150 to clitent
+    FILE* fd = fopen("ls.txt","r");
+    fseek(fd, SEEK_SET, 0);
+
+    /* 通过数据连接，发送ls.txt 文件的内容 */
+    while ((num_read = fread(data, 1, 256, fd)) > 0) 
+    {
+        if (send(data_sock, data, num_read, 0) < 0) 
+            perror("err");
+        memset(data, 0, 256);
+    }
+    fclose(fd);
+    close(data_sock);
+    send(clt_sock, tip226,sizeof(tip226),0);    // 发送应答码 226（关闭数据连接，请求的文件操作成功）  
+}
+
+void ser_get(int clt_sock, int date_sock, char* name){
+    char tip150[256] = "150 Opening ASCII mode data connection for ";
+    strcat(tip150, name);
+    //150 Opening BINARY mode data connection for file.hole (50 bytes).
+    char tip226[256] = "Transfer complete";
 }
 
 int main(int argc,char *argv[]){
@@ -221,9 +285,11 @@ int main(int argc,char *argv[]){
     //循环等待命令
     int result;
     char buf[256];
+    char oldname[256];
+    int data_sock;
     while(1){
         memset(buf, '\0', sizeof(buf));
-        result = recv(clt_sock, buf, sizeof(buf), 0); //example: PORT 127,0,0,1,249,108 所以 port = 249*256 + 108
+        result = recv(clt_sock, buf, sizeof(buf), 0); 
         if(buf!=NULL)
             printf("recv:%s\n",buf);
         if(strcmp(buf,"QUIT\r\n")==0){
@@ -244,6 +310,37 @@ int main(int argc,char *argv[]){
         if(strstr(buf, "DELE")!=NULL){
             buf[result - 2] = '\0';
             ser_del(clt_sock, buf + 5);
+        }
+        if(strstr(buf, "RNFR")!=NULL){
+            //RNFR a.c
+            //350 Ready for RNTO
+            //RNTO b.c
+            //250 Rename successful
+            buf[result - 2] = '\0';
+            strcpy(oldname,buf + 5);
+            ser_rnfr(clt_sock, buf + 5);
+        }
+        if(strstr(buf, "RNTO")!=NULL){
+            buf[result - 2] = '\0';
+            ser_rnto(clt_sock, oldname, buf + 5);
+        }
+        if(strstr(buf, "PORT")!=NULL){
+            buf[result - 2] = '\0';
+            printf("%s\n",buf+5);
+            data_sock = ser_port(clt_sock, buf+5);
+
+            //PORT 127,0,0,1,249,108  (port = 249*256 + 108)
+            //200 PORT command successful
+            //LIST
+            //150 Here comes the directory listing.
+            //data
+            //226 Directory send OK.
+        }
+        if(strstr(buf, "LIST")!=NULL){
+            ser_ls(clt_sock, data_sock);
+        }
+        if(strstr(buf, "RETR")!=NULL){
+            ser_get(clt_sock, data_sock, buf + 4);
         }
     }
     

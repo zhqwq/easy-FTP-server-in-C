@@ -263,6 +263,7 @@ void ser_ls(int clt_sock, int data_sock){
     fclose(fd);
     close(data_sock);
     send(clt_sock, tip226,sizeof(tip226),0);    // 发送应答码 226（关闭数据连接，请求的文件操作成功）  
+
 }
 
 void ser_get(int clt_sock, int date_sock, char* name){
@@ -339,6 +340,7 @@ int main(int argc,char *argv[]){
         if(strstr(buf, "LIST")!=NULL){
             ser_ls(clt_sock, data_sock);
         }
+
         if(strstr(buf, "RETR")!=NULL){
             ser_get(clt_sock, data_sock, buf + 4);
         }

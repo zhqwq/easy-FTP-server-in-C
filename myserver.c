@@ -9,6 +9,10 @@
 #include <shadow.h> // for getspnam()
 #include <errno.h>
 
+char* username;
+char namebuf[256];
+char dir[256];
+
 int socket_create(int port){
     int sockfd;
     int yes = 1;
@@ -83,21 +87,28 @@ void auth(int sock){
     
     //验证Linux用户与密码
    
-    if ( (result = recv(sock, buf, sizeof(buf), 0)) > 0 ){
-        buf[result-2] = '\0'; // 替换末尾 /r/n 为\0\n 使得字符串正确结尾
-        printf("Receive username: %s\n", buf+5);
-        if((sp = getspnam(buf+5)) == NULL){
+    if ( (result = recv(sock, namebuf, sizeof(namebuf), 0)) > 0 ){
+        namebuf[result-2] = '\0'; // 替换末尾 /r/n 为\0\n 使得字符串正确结尾
+        printf("Receive username: %s\n", namebuf+5);
+        username = namebuf+5;
+        if((sp = getspnam(username)) == NULL){
             send(sock, tip530, sizeof(tip530), 0); //print: Login incorrect
             send(sock, tip, sizeof(tip), 0); //print: Login failed
             close(sock);
         }
+        
         send(sock, tip331, sizeof(tip331), 0); //print: 331 Please specify the password
         result = recv(sock, buf, sizeof(buf), 0);
         buf[result-2] = '\0';
         if(strcmp(sp->sp_pwdp, (char*)crypt(buf+5, sp->sp_pwdp))==0){
-            send(sock, tip230, sizeof(tip230), 0);
+            send(sock, tip230, sizeof(tip230), 0); //230 Login successful
             if(recv(sock, buf, sizeof(buf), 0) > 0) //接受SYST
-                send(sock, tip215, sizeof(tip215), 0); 
+                send(sock, tip215, sizeof(tip215), 0); //215 UNIX Type: L8\r\n
+            //获取当前目录
+            memset(dir, '\0', sizeof(dir));
+            getcwd(dir, sizeof(dir));                 // dir = "/mnt/c/Users/ASUS/Desktop/ftp"
+            //printf("current user:%s\n", username);
+            //printf("current directory:%s\n", dir);
         }else{
             send(sock, tip530, sizeof(tip530), 0);
             send(sock, tip, sizeof(tip), 0);
@@ -130,8 +141,14 @@ void ser_pwd(int sock){
 void ser_cwd(int sock, char* path){
     char tip250[] = "250 Directory successfully changed\n";
     char tip550[] = "550 Failed to change directory!\n";
-    if(chdir(path) >= 0) //更换目录成功
+    if(chdir(path) >= 0) {
+        //更换目录成功
         send(sock, tip250, sizeof(tip250),0);
+        memset(dir, '\0', sizeof(dir));
+        getcwd(dir, sizeof(dir));                 // dir = "/mnt/c/Users/ASUS/Desktop/ftp"
+        //printf("current user:%s\n", username);
+        //printf("current directory:%s\n", dir);
+    }
     else{
         send(sock, tip550, sizeof(tip550),0);
         perror("550");
@@ -195,20 +212,20 @@ void ser_rnto(int sock, char* oldname, char* newname){
 int data_connect(int sock, int port){
     printf("进行Active数据连接\n");
     int data_sock;
-    char buf[256];
-    memset(buf, 0, sizeof(buf));
-    if ((data_sock = socket(AF_INET, SOCK_STREAM, 0)) < 0)
-    { 
-            perror("error: creating socket.\n");
-            return -1;
-    }
-
+    //char buf[256];
+    //memset(buf, '\0', sizeof(buf));
+    
     struct sockaddr_in dest_addr;
-    memset(&dest_addr, 0, sizeof(dest_addr));
+    memset(&dest_addr, '\0', sizeof(dest_addr));
     dest_addr.sin_family = AF_INET;
     dest_addr.sin_port = htons(port);
     dest_addr.sin_addr.s_addr = inet_addr("127.0.0.1");
-
+    if ((data_sock = socket(AF_INET, SOCK_STREAM, 0)) < 0)
+    { 
+        perror("error: creating socket.\n");
+        return -1;
+    }
+    
     if(connect(data_sock, (struct sockaddr *)&dest_addr, sizeof(dest_addr)) < 0 )
     {
         perror("error: connecting to server.\n");
@@ -235,10 +252,13 @@ int ser_port(int sock, char* addr){
     }
     
     int port = address[4]*256 + address[5];
+    printf("Connect client %d.%d.%d.%d on TCP Port %d\n", address[0], address[1], address[2], address[3], port);
+    printf("%s\t%s\texecute PORT\n", username, dir);
     int data_sock = data_connect(sock, port);
-    printf("最后两位数%d,%d,新端口号为%d\n", address[4],address[5],port);
+    //printf("最后两位数%d,%d,新端口号为%d\n", address[4],address[5],port);
     strcpy(buf, "200 PORT command successful.\n");
     send(sock, buf, sizeof(buf), 0);
+    printf("%s\t%s\texecute PORT successfully\n", username, dir);
     return data_sock;
 }
 
@@ -249,8 +269,8 @@ void ser_ls(int clt_sock, int data_sock){
     size_t num_read;    
     memset(data,'\0', sizeof(data));
     system("ls -l | tail -n+2 > ls.txt");
-    send(clt_sock,tip150,sizeof(tip150),0); //send 150 to clitent
-    FILE* fd = fopen("ls.txt","r");
+    send(clt_sock,tip150,sizeof(tip150),0); //send 150 to client
+    FILE* fd = fopen("ls.txt","rb+");
     fseek(fd, SEEK_SET, 0);
 
     /* 通过数据连接，发送ls.txt 文件的内容 */
@@ -261,16 +281,72 @@ void ser_ls(int clt_sock, int data_sock){
         memset(data, 0, 256);
     }
     fclose(fd);
-    close(data_sock);
+    close(data_sock); //关闭数据socket
     send(clt_sock, tip226,sizeof(tip226),0);    // 发送应答码 226（关闭数据连接，请求的文件操作成功）  
-
 }
 
-void ser_get(int clt_sock, int date_sock, char* name){
-    char tip150[256] = "150 Opening ASCII mode data connection for ";
-    strcat(tip150, name);
-    //150 Opening BINARY mode data connection for file.hole (50 bytes).
-    char tip226[256] = "Transfer complete";
+void ser_retr(int clt_sock, int data_sock, char* filename){
+    char tip226[256] = "226 Transfer complete.\n";
+    char tip550[256] = "550 Permission denied.\n";
+    char tip150[256] = "150 Opening data connection for ";
+    char buf[256];
+    strcat(tip150, filename);
+    FILE *in = fopen(filename, "r");
+    fseek(in, 0, SEEK_END);
+    long length = ftell(in);
+    sprintf(buf,"%ld",length);
+    rewind(in);
+    fclose(in);
+    strcat(tip150," (");
+    strcat(tip150,buf);
+    strcat(tip150," bytes)\n");
+    FILE* fd = NULL;
+    char data[256];
+    size_t num_read;
+
+    if((fd = fopen(filename, "rb+"))==NULL){
+        send(clt_sock,tip550,sizeof(tip550),0); //文件不存在 发送错误码550
+    }else{
+        send(clt_sock,tip150,sizeof(tip150),0);
+        do{
+            num_read = fread(data, 1, 256, fd);
+            if (num_read < 0) 
+                perror("error in fread()\n");
+
+            if (send(data_sock, data, num_read, 0) < 0) // 发送数据（文件内容）
+                perror("error sending file\n");
+        }while(num_read > 0);
+
+        send(clt_sock, tip226, sizeof(tip226),0); //传输完成 发送响应码226
+        fclose(fd);
+        close(data_sock);
+    }
+}
+
+void ser_stor(int clt_sock, int data_sock, char* filename){
+    char tip550[256] = "550 Requested action not taken.\n";
+    char tip150[256] = "150 Ok to send data.\n";
+    char tip226[256] = "226 Transfer complete\n";
+
+    FILE* fd = NULL;
+    char data[256];
+    memset(data,'\0',256);
+    size_t num_write;
+
+    if((fd = fopen(filename, "wb+"))== NULL){
+        send(clt_sock,tip550,sizeof(tip550),0); //文件打开失败 发送错误码550
+    }else{
+        send(clt_sock,tip150,sizeof(tip150),0);
+        while (recv(data_sock, data, sizeof(data),0)>0)
+        {
+            if(num_write = fwrite(data, 1, strlen(data), fd) < 0)
+                perror("fwrite() error.\n");
+        }
+    }
+
+    send(clt_sock, tip226, sizeof(tip226), 0);
+    fclose(fd);
+    close(data_sock);
 }
 
 int main(int argc,char *argv[]){
@@ -325,24 +401,31 @@ int main(int argc,char *argv[]){
             buf[result - 2] = '\0';
             ser_rnto(clt_sock, oldname, buf + 5);
         }
-        if(strstr(buf, "PORT")!=NULL){
+        if(strstr(buf, "PORT")!=NULL){ 
+            // 客户端发送LIST(ls),RETR(get),STOR(put)前，
+            // 如果是主动模式，会先发起PORT请求，服务器收到PORT命令后新建数据端口连接到客户端指定端口
+            // 在数据socket上进行数据传输, 在控制命令端口socket上进行命令传输
+            //Request: PORT 127,0,0,1,249,108  (port = 249*256 + 108)
+            //Response: 200 PORT command successful
+            //Request: LIST
+            //Resonse: 150 Here comes the directory listing.
+            //通过data_sock传输二进制数据
+            //Resonse: 226 Directory send OK.
             buf[result - 2] = '\0';
             printf("%s\n",buf+5);
             data_sock = ser_port(clt_sock, buf+5);
-
-            //PORT 127,0,0,1,249,108  (port = 249*256 + 108)
-            //200 PORT command successful
-            //LIST
-            //150 Here comes the directory listing.
-            //data
-            //226 Directory send OK.
+            
         }
         if(strstr(buf, "LIST")!=NULL){
             ser_ls(clt_sock, data_sock);
         }
-
-        if(strstr(buf, "RETR")!=NULL){
-            ser_get(clt_sock, data_sock, buf + 4);
+        if(strstr(buf, "RETR")!=NULL){ //RETR test.txt
+            buf[result - 2] = '\0';
+            ser_retr(clt_sock, data_sock, buf + 5);
+        }
+        if(strstr(buf, "STOR")!=NULL){
+            buf[result - 2] = '\0';
+            ser_stor(clt_sock, data_sock, buf + 5);
         }
     }
     

@@ -78,10 +78,10 @@ void auth(int sock){
     //服务器向Client发送响应码
     char tip[] = "Login failed\n";
     char tip220[] = "220 Welcome to Easy FTP server. Please enter username.\n"; //220 status code
-    char tip331[] = "331 Please specify the password\n"; //要求密码
-    char tip230[] = "230 Login successful\n"; //成功登录
-    char tip530[] = "530 Login incorrect\n"; // 登陆错误
-    char tip215[] = "215 UNIX Type: L8\r\n"; //系统类型
+    char tip331[] = "331 Please specify the password.\n"; //要求密码
+    char tip230[] = "230 Login successful.\n"; //成功登录
+    char tip530[] = "530 Login incorrect.\n"; // 登陆错误
+    char tip215[] = "215 UNIX Type: L8.\r\n"; //系统类型
     
     send(sock, tip220, sizeof(tip220), 0); //print:220 Please enter username
     
@@ -89,7 +89,7 @@ void auth(int sock){
    
     if ( (result = recv(sock, namebuf, sizeof(namebuf), 0)) > 0 ){
         namebuf[result-2] = '\0'; // 替换末尾 /r/n 为\0\n 使得字符串正确结尾
-        printf("Receive username: %s\n", namebuf+5);
+        printf("Receive username: %s\n\n", namebuf+5);
         username = namebuf+5;
         if((sp = getspnam(username)) == NULL){
             send(sock, tip530, sizeof(tip530), 0); //print: Login incorrect
@@ -120,13 +120,14 @@ void auth(int sock){
         close(sock); 
     }
     else{
-        printf("recv failed: \n");
+        printf("recv failed\n");
         close(sock);
     }
     
 }
 
 void ser_pwd(int sock){
+    printf("%s\t%s\texecute PWD\n", username, dir);
     char buf[256];
     memset(buf, '\0', sizeof(buf));
     char a[256];
@@ -136,10 +137,12 @@ void ser_pwd(int sock){
     strcat(a,buf);                            // a = "257 The current diretory is /mnt/c/Users/ASUS/Desktop/ftp"
     strcat(a,"\n");                           
     send(sock, a, sizeof(a), 0);
+    printf("%s\t%s\texecute PWD successfully\n\n", username, dir);
 }
 
 void ser_cwd(int sock, char* path){
-    char tip250[] = "250 Directory successfully changed\n";
+    printf("%s\t%s\texecute CWD %s\n", username, dir, path);
+    char tip250[] = "250 Directory successfully changed.\n";
     char tip550[] = "550 Failed to change directory!\n";
     if(chdir(path) >= 0) {
         //更换目录成功
@@ -153,9 +156,11 @@ void ser_cwd(int sock, char* path){
         send(sock, tip550, sizeof(tip550),0);
         perror("550");
     }
+    printf("%s\t%s\texecute CWD %s successfully\n\n", username, dir, path);
 }
 
 void ser_mkd(int sock, char* path){
+    printf("%s\t%s\texecute MKD %s\n", username, dir, path);
     char buf[256];
     memset(buf, '\0', sizeof(buf));
     char tip550[256] = "550 Create directory operation failed.\n";
@@ -166,14 +171,16 @@ void ser_mkd(int sock, char* path){
     strcat(buf,path);
     if(mkdir(path, S_IRWXU)==0){
         strcat(tip257,buf);
-        strcat(tip257," created \n");
+        strcat(tip257," created.\n");
         send(sock, tip257,strlen(tip257), 0);
+        printf("%s\t%s\texecute MKD %s successfully\n\n", username, dir, path);
     }else{
         send(sock, tip550,sizeof(tip550), 0);
     }
 }
 
 void ser_del(int sock, char* path){
+    printf("%s\t%s\texecute DEL %s\n", username, dir, path);
     char tip550[256] = "550 Delete operation failed.\n";
     char tip250[256] = "250 Delete operation successful.\n";
     
@@ -181,10 +188,12 @@ void ser_del(int sock, char* path){
         send(sock, tip250,strlen(tip250), 0);
     }else{
         send(sock, tip550,sizeof(tip550), 0);
+        printf("%s\t%s\texecute DEL %s successfully\n\n", username, dir, path);
     }
 }
 
 void ser_rnfr(int sock, char* name){
+    printf("%s\t%s\texecute RNFR %s\n", username, dir, name);
     char buf[256];
     memset(buf,'\0',sizeof(buf));
     FILE *fp;
@@ -195,22 +204,25 @@ void ser_rnfr(int sock, char* name){
     else{
         strcpy(buf,"350 Ready for RNTO.\n");
         send(sock, buf, sizeof(buf),0);
+        printf("%s\t%s\texecute RNFR %s successfully\n\n", username, dir, name);
     }
 }
 
 void ser_rnto(int sock, char* oldname, char* newname){
+    printf("%s\t%s\texecute RNTO %s %s\n", username, dir, oldname, newname);
     char buf[256];
     if(rename(oldname,newname)==0){
         strcpy(buf, "250 Rename successful.\n");
         send(sock, buf, strlen(buf), 0);
+        printf("%s\t%s\texecute RNTO %s %s successfully\n\n", username, dir, oldname, newname);
     }else{
-        strcpy(buf,"550 Failed to rename\n");
+        strcpy(buf,"550 Failed to rename.\n");
         send(sock, buf, strlen(buf), 0);
     }
 }
 
 int data_connect(int sock, int port){
-    printf("进行Active数据连接\n");
+    //printf("进行Active数据连接\n");
     int data_sock;
     //char buf[256];
     //memset(buf, '\0', sizeof(buf));
@@ -236,9 +248,11 @@ int data_connect(int sock, int port){
 }
 
 int ser_port(int sock, char* addr){
+    printf("Active Mode On\n");
+    printf("%s\t%s\texecute PORT\n", username, dir);
     char buf[256];
     memset(buf,'\0',sizeof(buf));
-    printf("准备连接客户端端口\n");
+    //printf("准备连接客户端端口\n");
     int address[7];
     memset(address,'\0',7);
     char* token = strtok(addr, ",");
@@ -250,19 +264,18 @@ int ser_port(int sock, char* addr){
         address[i] = atoi(token);
         i++;
     }
-    
     int port = address[4]*256 + address[5];
-    printf("Connect client %d.%d.%d.%d on TCP Port %d\n", address[0], address[1], address[2], address[3], port);
-    printf("%s\t%s\texecute PORT\n", username, dir);
+    printf("Connect client %d.%d.%d.%d on TCP Port %d.\n", address[0], address[1], address[2], address[3], port);
     int data_sock = data_connect(sock, port);
     //printf("最后两位数%d,%d,新端口号为%d\n", address[4],address[5],port);
     strcpy(buf, "200 PORT command successful.\n");
     send(sock, buf, sizeof(buf), 0);
-    printf("%s\t%s\texecute PORT successfully\n", username, dir);
+    printf("%s\t%s\texecute PORT successfully\n\n", username, dir);
     return data_sock;
 }
 
 void ser_ls(int clt_sock, int data_sock){
+    printf("%s\t%s\texecute LIST\n", username, dir);
     char tip150[256] = "150 Here comes the directory listing.\n";
     char tip226[256] = "226 Directory send OK.\n";
     char data[256];
@@ -283,9 +296,11 @@ void ser_ls(int clt_sock, int data_sock){
     fclose(fd);
     close(data_sock); //关闭数据socket
     send(clt_sock, tip226,sizeof(tip226),0);    // 发送应答码 226（关闭数据连接，请求的文件操作成功）  
+    printf("%s\t%s\texecute LIST successfully\n\n", username, dir);
 }
 
 void ser_retr(int clt_sock, int data_sock, char* filename){
+    printf("%s\t%s\texecute RETR %s\n", username, dir, filename);
     char tip226[256] = "226 Transfer complete.\n";
     char tip550[256] = "550 Permission denied.\n";
     char tip150[256] = "150 Opening data connection for ";
@@ -299,7 +314,7 @@ void ser_retr(int clt_sock, int data_sock, char* filename){
     fclose(in);
     strcat(tip150," (");
     strcat(tip150,buf);
-    strcat(tip150," bytes)\n");
+    strcat(tip150," bytes).\n");
     FILE* fd = NULL;
     char data[256];
     size_t num_read;
@@ -311,22 +326,24 @@ void ser_retr(int clt_sock, int data_sock, char* filename){
         do{
             num_read = fread(data, 1, 256, fd);
             if (num_read < 0) 
-                perror("error in fread()\n");
+                perror("error in fread().\n");
 
             if (send(data_sock, data, num_read, 0) < 0) // 发送数据（文件内容）
-                perror("error sending file\n");
+                perror("error sending file.\n");
         }while(num_read > 0);
 
         send(clt_sock, tip226, sizeof(tip226),0); //传输完成 发送响应码226
         fclose(fd);
         close(data_sock);
+        printf("%s\t%s\texecute RETR %s successfully\n\n", username, dir, filename);
     }
 }
 
 void ser_stor(int clt_sock, int data_sock, char* filename){
+    printf("%s\t%s\texecute STOR\n", username, dir);
     char tip550[256] = "550 Requested action not taken.\n";
     char tip150[256] = "150 Ok to send data.\n";
-    char tip226[256] = "226 Transfer complete\n";
+    char tip226[256] = "226 Transfer complete.\n";
 
     FILE* fd = NULL;
     char data[256];
@@ -347,6 +364,7 @@ void ser_stor(int clt_sock, int data_sock, char* filename){
     send(clt_sock, tip226, sizeof(tip226), 0);
     fclose(fd);
     close(data_sock);
+    printf("%s\t%s\texecute STOR successfully\n\n", username, dir);
 }
 
 int main(int argc,char *argv[]){
@@ -368,9 +386,11 @@ int main(int argc,char *argv[]){
         memset(buf, '\0', sizeof(buf));
         result = recv(clt_sock, buf, sizeof(buf), 0); 
         if(buf!=NULL)
-            printf("recv:%s\n",buf);
+            printf("recv:%s",buf);
         if(strcmp(buf,"QUIT\r\n")==0){
+            printf("%s\t%s\texecute QUIT\n", username, dir);
             send(clt_sock, tip221, sizeof(tip221), 0);
+            printf("%s\t%s\texecute QUIT successfully\n\n", username, dir);
             break;
         }
         if(strcmp(buf,"PWD\r\n")==0){
@@ -412,7 +432,7 @@ int main(int argc,char *argv[]){
             //通过data_sock传输二进制数据
             //Resonse: 226 Directory send OK.
             buf[result - 2] = '\0';
-            printf("%s\n",buf+5);
+            //printf("%s\n",buf+5);
             data_sock = ser_port(clt_sock, buf+5);
             
         }

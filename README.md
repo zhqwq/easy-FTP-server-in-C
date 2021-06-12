@@ -8,9 +8,9 @@ gcc myserver.c -o myserver -lcrypt
 sudo ./myserver
 
 ## FTP基本框架
-<center>
+
   [image](https://user-images.githubusercontent.com/56614895/121205636-6c2fce80-c8aa-11eb-805b-b0f93569c887.png)
-</center>
+
 
 ## 参考资料：
 0. https://www.cnblogs.com/wanghao-boke/p/11930651.html C语言实现FTP服务器

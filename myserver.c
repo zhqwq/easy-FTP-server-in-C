@@ -371,16 +371,16 @@ void ser_stor(int clt_sock, int data_sock, char* filename){
     printf("%s\t%s\texecute STOR successfully\n\n", username, dir);
 }
 
-// int ser_pasv(int clt_sock){
-//     printf("进入到ser_pasv函数\n");
-//     char tip227[256] = "227 Entering Passive Mode (127,0,0,1,161,147).";
-//     int ser_data_sock = socket_create(5054);
-//     send(clt_sock, tip227, strlen(tip227), 0);
+int ser_pasv(int clt_sock){
+    printf("进入到ser_pasv函数\n");
+    char tip227[256] = "227 Entering Passive Mode (127,0,0,1,161,147).\n";
+    int ser_data_sock = socket_create(41363);
+    send(clt_sock, tip227, strlen(tip227), 0);
 
-//     int clt_data_sock = socket_accept(ser_data_sock); 
-//     return clt_data_sock;
+    int clt_data_sock = socket_accept(ser_data_sock); 
+    return clt_data_sock;
     
-// }
+}
 
 int main(int argc,char *argv[]){
     // 初始化建立服务器21命令端口
@@ -404,7 +404,6 @@ int main(int argc,char *argv[]){
         buf[result - 2] = '\0'; //接受到命令已\r\n结尾 这里替换掉\r至\0 使得字符串正常结束
         if(buf!=NULL)
             printf("recv:%s\n",buf);
-        
         if(strstr(buf,"QUIT")!=NULL){
             printf("%s\t%s\t execute QUIT\n", username, dir);
             send(clt_sock, tip221, sizeof(tip221), 0);
@@ -418,7 +417,6 @@ int main(int argc,char *argv[]){
             ser_cwd(clt_sock, buf + 4);
         }
         if(strstr(buf, "MKD")!=NULL){
-            
             ser_mkd(clt_sock, buf + 4);
         }
         if(strstr(buf, "DELE")!=NULL){
@@ -446,9 +444,9 @@ int main(int argc,char *argv[]){
         if(strstr(buf, "STOR")!=NULL){ //上传
             ser_stor(clt_sock, data_sock, buf + 5);
         }
-        // if(strstr(buf, "PASV")!=NULL){ // 进行被动的数据连接, 服务器接受到PASV命令, 然后开启一个端口P(>1024)给客户端连接
-        //     data_sock = ser_pasv(clt_sock);
-        // }
+        if(strstr(buf, "PASV")!=NULL){ // 进行被动的数据连接, 服务器接受到PASV命令, 然后开启一个端口P(>1024)给客户端连接
+            data_sock = ser_pasv(clt_sock);
+        }
 
     }
     

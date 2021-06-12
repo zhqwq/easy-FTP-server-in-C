@@ -94,6 +94,8 @@ void auth(int sock){
         if((sp = getspnam(username)) == NULL){
             send(sock, tip530, sizeof(tip530), 0); //print: Login incorrect
             send(sock, tip, sizeof(tip), 0); //print: Login failed
+            printf("Username Authentication Failed. Program exits.\n");
+            exit(1);
             close(sock);
         }
         
@@ -110,17 +112,21 @@ void auth(int sock){
             //printf("current user:%s\n", username);
             //printf("current directory:%s\n", dir);
         }else{
-            send(sock, tip530, sizeof(tip530), 0);
-            send(sock, tip, sizeof(tip), 0);
+            send(sock, tip530, sizeof(tip530), 0); //Login incorrect
+            send(sock, tip, sizeof(tip), 0);//Login failed
+            printf("Password Authentication Failed. Program exits.\n");
+            exit(1);
             close(sock); 
         }
     }
     else if ( result == 0 ){
         printf("Connection closed\n");
+        exit(1);
         close(sock); 
     }
     else{
-        printf("recv failed\n");
+        printf("recv() failed\n");
+        exit(1);
         close(sock);
     }
     

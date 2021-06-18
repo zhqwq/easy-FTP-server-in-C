@@ -8,10 +8,27 @@
 #include <unistd.h>
 #include <shadow.h> // for getspnam()
 #include <errno.h>
+#include <time.h> // for srand()
+#include <sys/time.h>
+
+/**
+ * @brief A basic FTP Server System
+ * Author: Kaiwei Zhang, Xiao Zheng
+ * Function Established: AUTH, PWD, CWD, MKD, DELE, LIST, PORT, STOR, RETR, RNFR, RNTO, QUIT, PASV
+ * !Bug exists: In passive mode, ls cannot be executed twice, and put and set cannot be executed either.
+ * 
+ * Should be compiled in LINUX system.
+ * Compile command: gcc myserver.c -o myserver -lcrypt
+ * Execute command: sudo myserver
+ * 
+ * You also need another terminal of the same host to open a ftp client(using system ftp client)
+ * Execute command: ftp 127.0.0.1 (loop IP, the server can only interact with the same host, as it is defined in the program)
+ */
 
 char* username;
 char namebuf[256];
 char dir[256];
+int ser_sock2;
 
 int socket_create(int port){
     int sockfd;
@@ -37,7 +54,7 @@ int socket_create(int port){
         return -1; 
     }
 
-    // 绑定本地套接字地址到套接字
+    // bind socket with local address
     if (bind(sockfd, (struct sockaddr *) &sock_addr, sizeof(sock_addr)) < 0) 
     {
         close(sockfd);
@@ -45,7 +62,7 @@ int socket_create(int port){
         return -1; 
     }     
 
-    // 将套接字设置为监听状态(listen() puts server socket in passive mode)
+    // (listen() puts server socket in passive mode)
     int backlog = 5; //max length to pend connection for socket to grow.
     if (listen(sockfd, backlog) < 0) 
     {
@@ -65,7 +82,7 @@ int socket_accept(int sock){
         perror("accept() error");
         return -1;
     }
-    printf("Accept client %s on TCP Port %d\n", inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
+    printf("Accept client %s on TCP Port %d.\n", inet_ntoa(client_addr.sin_addr), ntohs(client_addr.sin_port));
     return sockfd;
 }
 
@@ -73,44 +90,43 @@ void auth(int sock){
     struct spwd *sp;
     int result;
     char buf[256];
-    memset(buf,'\0',sizeof(buf)); //填充'0'结束符 防止printf输出奇奇怪怪的东西
+    memset(buf,'\0',sizeof(buf)); 
 
-    //服务器向Client发送响应码
     char tip[] = "Login failed\n";
     char tip220[] = "220 Welcome to Easy FTP server. Please enter username.\n"; //220 status code
-    char tip331[] = "331 Please specify the password.\n"; //要求密码
-    char tip230[] = "230 Login successful.\n"; //成功登录
-    char tip530[] = "530 Login incorrect.\n"; // 登陆错误
-    char tip215[] = "215 UNIX Type: L8.\r\n"; //系统类型
+    char tip331[] = "331 Please specify the password.\n"; 
+    char tip230[] = "230 Login successful.\n"; 
+    char tip530[] = "530 Login incorrect.\n"; 
+    char tip215[] = "215 UNIX Type: L8.\r\n"; //L8: system type
     
-    send(sock, tip220, sizeof(tip220), 0); //print:220 Please enter username
+    send(sock, tip220, sizeof(tip220)- 1, 0); //print:220 Please enter username
     
     //验证Linux用户与密码
    
     if ( (result = recv(sock, namebuf, sizeof(namebuf), 0)) > 0 ){
-        namebuf[result-2] = '\0'; // 替换末尾 /r/n 为\0\n 使得字符串正确结尾
+        namebuf[result-2] = '\0'; 
         printf("Receive username: %s\n\n", namebuf+5);
         username = namebuf+5;
         if((sp = getspnam(username)) == NULL){
-            send(sock, tip530, sizeof(tip530), 0); //print: Login incorrect
+            send(sock, tip530, sizeof(tip530) - 1, 0); //print: Login incorrect
             send(sock, tip, sizeof(tip), 0); //print: Login failed
             printf("Username Authentication Failed. Program exits.\n");
             exit(1);
             close(sock);
         }
         
-        send(sock, tip331, sizeof(tip331), 0); //print: 331 Please specify the password
+        send(sock, tip331, sizeof(tip331) - 1, 0); //print: 331 Please specify the password
         result = recv(sock, buf, sizeof(buf), 0);
         buf[result-2] = '\0';
         if(strcmp(sp->sp_pwdp, (char*)crypt(buf+5, sp->sp_pwdp))==0){
-            send(sock, tip230, sizeof(tip230), 0); //230 Login successful
-            if(recv(sock, buf, sizeof(buf), 0) > 0) //接受SYST
-                send(sock, tip215, sizeof(tip215), 0); //215 UNIX Type: L8\r\n
-            //获取当前目录
+            send(sock, tip230, sizeof(tip230) - 1, 0); //230 Login successful
+            if(recv(sock, buf, sizeof(buf), 0) > 0) //recv SYST
+                send(sock, tip215, sizeof(tip215) - 1, 0); //215 UNIX Type: L8\r\n
+            //get current directory
             memset(dir, '\0', sizeof(dir));
             getcwd(dir, sizeof(dir));                 // dir = "/mnt/c/Users/ASUS/Desktop/ftp"
         }else{
-            send(sock, tip530, sizeof(tip530), 0); //Login incorrect
+            send(sock, tip530, sizeof(tip530) - 1, 0); //Login incorrect
             send(sock, tip, sizeof(tip), 0);//Login failed
             printf("Password Authentication Failed. Program exits.\n");
             exit(1);
@@ -150,12 +166,12 @@ void ser_cwd(int sock, char* path){
     char tip550[] = "550 Failed to change directory!\n";
     if(chdir(path) >= 0) {
         //更换目录成功
-        send(sock, tip250, sizeof(tip250),0);
+        send(sock, tip250, sizeof(tip250) - 1,0);
         memset(dir, '\0', sizeof(dir));
         getcwd(dir, sizeof(dir));                
     }
     else{
-        send(sock, tip550, sizeof(tip550),0);
+        send(sock, tip550, sizeof(tip550) - 1,0);
     }
     
     printf("%s\t%s\t execute CWD %s successfully\n\n", username, dir, path);
@@ -177,7 +193,7 @@ void ser_mkd(int sock, char* path){
         send(sock, tip257,strlen(tip257), 0);
         printf("%s\t%s\t execute MKD %s successfully\n\n", username, dir, path);
     }else{
-        send(sock, tip550,sizeof(tip550), 0);
+        send(sock, tip550,sizeof(tip550) - 1, 0);
     }
 }
 
@@ -187,9 +203,10 @@ void ser_del(int sock, char* path){
     char tip250[256] = "250 Delete operation successful.\n";
     
     if(remove(path)==0){
-        send(sock, tip250,strlen(tip250), 0);
+        send(sock, tip250,strlen(tip250) - 1, 0);
     }else{
-        send(sock, tip550,sizeof(tip550), 0);
+
+        send(sock, tip550,sizeof(tip550) - 1, 0);
         printf("%s\t%s\t execute DEL %s successfully\n\n", username, dir, path);
     }
 }
@@ -252,6 +269,7 @@ int data_connect(int sock, int port){
 }
 
 int ser_port(int sock, char* addr){
+    printf("%s\t%s\t execute PORT\n", username, dir);
     char buf[256];
     memset(buf,'\0',sizeof(buf));
     int address[7];
@@ -267,11 +285,9 @@ int ser_port(int sock, char* addr){
     }
     int port = address[4]*256 + address[5];
     int data_sock = data_connect(sock, port);
-
-    printf("Active Mode On\n");
+    printf("Active Mode On.\n");
     printf("Connect client %d.%d.%d.%d on TCP Port %d.\n", address[0], address[1], address[2], address[3], port);
-    printf("%s\t%s\t execute PORT\n", username, dir);
-    strcpy(buf, "200 PORT command successful.\n");
+    strcpy(buf, "200 PORT command successful. Consider using PASV.\n");
     send(sock, buf, sizeof(buf), 0);
     printf("%s\t%s\t execute PORT successfully\n\n", username, dir);
     return data_sock;
@@ -285,21 +301,35 @@ void ser_ls(int clt_sock, int data_sock){
     size_t num_read;    
     memset(data,'\0', sizeof(data));
     system("ls -l | tail -n+2 > ls.txt");
-    send(clt_sock, tip150, sizeof(tip150),0); //send 150 to client
+    send(clt_sock, tip150, sizeof(tip150) - 1,0); //send 150 to client
     FILE* fd = fopen("ls.txt","rb+");
     fseek(fd, SEEK_SET, 0);
 
-    /* 通过数据连接，发送ls.txt 文件的内容 */
+    /* send ls.txt */
     while ((num_read = fread(data, 1, 256, fd)) > 0) 
     {
         if (send(data_sock, data, num_read, 0) < 0) 
-            perror("err");
+            perror("ls error");
         memset(data, 0, 256);
     }
     fclose(fd);
-    close(data_sock); //关闭数据socket
-    send(clt_sock, tip226,sizeof(tip226),0);    // 发送应答码 226（关闭数据连接，请求的文件操作成功）  
+    close(data_sock); 
+    close(ser_sock2);
+    send(clt_sock, tip226,sizeof(tip226) - 1,0);    // file send complete  
     printf("%s\t%s\t execute LIST successfully\n\n", username, dir);
+}
+
+void ser_type(int clt_sock, char* type){
+    printf("%s\t%s\texecute TYPE %s\n", username, dir, type);
+    char tip200a[256] = "200 Switching to ASCII mode.\n";
+    char tip200b[256] = "200 Switching to Binary mode.\n";
+    if(strcmp(type, "A") == 0)
+        send(clt_sock, tip200a, sizeof(tip200a) - 1, 0);
+    else if(strcmp(type, "I") == 0)
+        send(clt_sock, tip200b, sizeof(tip200b) - 1, 0);
+    else
+        perror("TYPE Error");
+    printf("%s\t%s\texecute TYPE %s successfully\n\n", username, dir, type);
 }
 
 void ser_retr(int clt_sock, int data_sock, char* filename){
@@ -322,21 +352,33 @@ void ser_retr(int clt_sock, int data_sock, char* filename){
     FILE* fd = NULL;
     char data[256];
     size_t num_read;
+    struct timeval start,end;
 
     if((fd = fopen(filename, "rb+"))==NULL){
-        send(clt_sock,tip550,sizeof(tip550),0); //文件不存在 发送错误码550
+        send(clt_sock,tip550,sizeof(tip550) - 1,0); //file not exist
     }else{
-        send(clt_sock,tip150,sizeof(tip150),0);
+        send(clt_sock,tip150,sizeof(tip150) - 1,0);
+        gettimeofday(&start, NULL);
         do{
             num_read = fread(data, 1, 256, fd);
             if (num_read < 0) 
                 perror("error in fread().\n");
 
-            if (send(data_sock, data, num_read, 0) < 0) // 发送数据（文件内容）
+            if (send(data_sock, data, num_read, 0) < 0) // send data
                 perror("error sending file.\n");
         }while(num_read > 0);
+        send(clt_sock, tip226, sizeof(tip226) - 1,0); // transmission complete
+        gettimeofday(&end, NULL);
+        long timeuse =1000000 * ( end.tv_sec - start.tv_sec ) + end.tv_usec - start.tv_usec;
+        float time = timeuse /1000000.0;
+        printf("time = %f seconds\n",time);
+                                        
+        if( fseek(fd, 0 , SEEK_END) != 0)
+               printf("fseek failed\n");
+        int size = ftell(fd);
+        printf("total traffic = %d bytes\n",size);
+        printf("speed = %f kbps\n", (size/time)/1000.0);
 
-        send(clt_sock, tip226, sizeof(tip226),0); //传输完成 发送响应码226
         fclose(fd);
         close(data_sock);
         printf("%s\t%s\t execute RETR %s successfully\n\n", username, dir, filename);
@@ -353,22 +395,62 @@ void ser_stor(int clt_sock, int data_sock, char* filename){
     char data[256];
     memset(data,'\0',256);
     size_t num_write;
+    struct timeval start,end;
 
+    
+    
     if((fd = fopen(filename, "wb+"))== NULL){
-        send(clt_sock,tip550,sizeof(tip550),0); //文件打开失败 发送错误码550
+        send(clt_sock,tip550,sizeof(tip550) - 1,0); // file open failed
     }else{
-        send(clt_sock,tip150,sizeof(tip150),0);
+        send(clt_sock,tip150,sizeof(tip150) - 1,0);
+        gettimeofday(&start, NULL);
         while (recv(data_sock, data, sizeof(data),0)>0)
         {
             if(num_write = fwrite(data, 1, strlen(data), fd) < 0)
                 perror("fwrite() error.\n");
         }
+        send(clt_sock, tip226, sizeof(tip226) - 1, 0);
+        gettimeofday(&end, NULL);
+        long timeuse =1000000 * ( end.tv_sec - start.tv_sec ) + end.tv_usec - start.tv_usec;
+        float time = timeuse /1000000.0;
+        printf("time = %f seconds\n",time);
+                                        
+        if( fseek(fd, 0 , SEEK_END) != 0)
+               printf("fseek failed\n");
+        int size = ftell(fd);
+        printf("total traffic = %d bytes\n",size);
+        printf("speed = %f kbps\n", (size/time)/1000.0);
     }
 
-    send(clt_sock, tip226, sizeof(tip226), 0);
+    
     fclose(fd);
     close(data_sock);
-    printf("%s\t%s\texecute STOR successfully\n\n", username, dir);
+    printf("%s\t%s\texecute STOR successfully\n", username, dir);
+}
+
+int ser_pasv(int clt_sock){
+    printf("%s\t%s\texecute PASV\n", username, dir);
+    char tip227[256] = "227 Entering Passive Mode (127,0,0,1,%d,%d).\n";
+    char buff[256];
+    int portmin = 10000;
+    int portmax = 20000;
+    srand((unsigned int)time(0));
+    int randport = rand() % (portmax - portmin + 1) + portmin;
+
+    ser_sock2 = socket_create(randport);
+
+    printf("Passive Mode On.\n");
+    sprintf(buff, tip227, randport / 256, randport % 256);
+
+    send(clt_sock, buff, strlen(buff), 0);
+    printf("Connect client 127.0.0.1 on TCP Port %d.\n", randport);
+    
+    printf("%s\n",buff);
+
+    int clt_data_sock = socket_accept(ser_sock2); 
+    
+    printf("%s\t%s\texecute PASV successfully\n\n", username, dir);
+    return clt_data_sock;
 }
 
 int ser_pasv(int clt_sock){
@@ -383,7 +465,7 @@ int ser_pasv(int clt_sock){
 }
 
 int main(int argc,char *argv[]){
-    // 初始化建立服务器21命令端口
+    // initialization
     int port = 21; // port 21 for FTP
     int ser_sock = socket_create(port); // socket() - setsockopt() - bind() - lienten()
     int clt_sock = socket_accept(ser_sock); // accept()
@@ -392,7 +474,7 @@ int main(int argc,char *argv[]){
     //authentication
     auth(clt_sock);
 
-    //循环等待命令
+    //continuously wait
     int result;
     char buf[256];
     char oldname[256];
@@ -401,12 +483,12 @@ int main(int argc,char *argv[]){
     while(1){
         memset(buf, '\0', sizeof(buf));
         result = recv(clt_sock, buf, sizeof(buf), 0); 
-        buf[result - 2] = '\0'; //接受到命令已\r\n结尾 这里替换掉\r至\0 使得字符串正常结束
+        buf[result - 2] = '\0'; 
         if(buf!=NULL)
             printf("recv:%s\n",buf);
         if(strstr(buf,"QUIT")!=NULL){
             printf("%s\t%s\t execute QUIT\n", username, dir);
-            send(clt_sock, tip221, sizeof(tip221), 0);
+            send(clt_sock, tip221, sizeof(tip221) - 1, 0);
             printf("%s\t%s\t execute QUIT successfully\n", username, dir);
             break;
         }
@@ -420,7 +502,6 @@ int main(int argc,char *argv[]){
             ser_mkd(clt_sock, buf + 4);
         }
         if(strstr(buf, "DELE")!=NULL){
-            
             ser_del(clt_sock, buf + 5);
         }
         if(strstr(buf, "RNFR")!=NULL){
@@ -431,20 +512,23 @@ int main(int argc,char *argv[]){
            
             ser_rnto(clt_sock, oldname, buf + 5);
         }
-        if(strstr(buf, "PORT")!=NULL){ // 进行主动的数据连接时, 服务器会先收到PORT命令, 主动连接客户端数据端口
+        if(strstr(buf, "PORT")!=NULL){ // in active mode
             data_sock = ser_port(clt_sock, buf+5);
         }
         if(strstr(buf, "LIST")!=NULL){
             ser_ls(clt_sock, data_sock);
             
         }
+        if(strstr(buf, "TYPE")!=NULL){
+            ser_type(clt_sock, buf + 5);
+        }
         if(strstr(buf, "RETR")!=NULL){ //RETR test.txt
             ser_retr(clt_sock, data_sock, buf + 5);
         }
-        if(strstr(buf, "STOR")!=NULL){ //上传
+        if(strstr(buf, "STOR")!=NULL){ //upload
             ser_stor(clt_sock, data_sock, buf + 5);
         }
-        if(strstr(buf, "PASV")!=NULL){ // 进行被动的数据连接, 服务器接受到PASV命令, 然后开启一个端口P(>1024)给客户端连接
+        if(strstr(buf, "PASV")!=NULL){ // in passive mode
             data_sock = ser_pasv(clt_sock);
         }
 

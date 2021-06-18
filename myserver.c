@@ -203,8 +203,9 @@ void ser_del(int sock, char* path){
     char tip250[256] = "250 Delete operation successful.\n";
     
     if(remove(path)==0){
-        send(sock, tip250,strlen(tip250), 0);
+        send(sock, tip250,strlen(tip250) - 1, 0);
     }else{
+
         send(sock, tip550,sizeof(tip550) - 1, 0);
         printf("%s\t%s\t execute DEL %s successfully\n\n", username, dir, path);
     }
@@ -284,7 +285,6 @@ int ser_port(int sock, char* addr){
     }
     int port = address[4]*256 + address[5];
     int data_sock = data_connect(sock, port);
-
     printf("Active Mode On.\n");
     printf("Connect client %d.%d.%d.%d on TCP Port %d.\n", address[0], address[1], address[2], address[3], port);
     strcpy(buf, "200 PORT command successful. Consider using PASV.\n");
@@ -453,6 +453,17 @@ int ser_pasv(int clt_sock){
     return clt_data_sock;
 }
 
+int ser_pasv(int clt_sock){
+    printf("进入到ser_pasv函数\n");
+    char tip227[256] = "227 Entering Passive Mode (127,0,0,1,161,147).\n";
+    int ser_data_sock = socket_create(41363);
+    send(clt_sock, tip227, strlen(tip227), 0);
+
+    int clt_data_sock = socket_accept(ser_data_sock); 
+    return clt_data_sock;
+    
+}
+
 int main(int argc,char *argv[]){
     // initialization
     int port = 21; // port 21 for FTP
@@ -506,6 +517,7 @@ int main(int argc,char *argv[]){
         }
         if(strstr(buf, "LIST")!=NULL){
             ser_ls(clt_sock, data_sock);
+            
         }
         if(strstr(buf, "TYPE")!=NULL){
             ser_type(clt_sock, buf + 5);

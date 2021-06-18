@@ -1,4 +1,0 @@
--rwxrwxrwx 1 zhengx zhengx   349 Jun  9 23:19 README.md
--rwxrwxrwx 1 zhengx zhengx   221 Jun 10 02:37 ls.txt
--rwxrwxrwx 1 zhengx zhengx 26904 Jun 10 02:36 myserver
--rwxrwxrwx 1 zhengx zhengx 10340 Jun 10 02:34 myserver.c

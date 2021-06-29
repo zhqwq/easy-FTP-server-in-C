@@ -11,7 +11,7 @@ sudo ./myserver  <br>
 还没学会写makefile <br>
 使用vsftpd连接至local服务器 ftp 127.0.0.1 <br>
 
-## FTP基本框架
+## Socket Structure
  ![image](https://user-images.githubusercontent.com/56614895/121205636-6c2fce80-c8aa-11eb-805b-b0f93569c887.png)
 
 ## 参考资料：

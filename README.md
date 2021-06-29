@@ -1,3 +1,5 @@
+# Introduction
+BUPT 2021 互联网应用大作业 用C语言在Linux环境中实现一个FTP服务器(socket编程)
 ## Implemented Function:
 基本命令: Auth, PWD, CWD, LISt, MKDIR, DEL, RN <br>
 主动模式Active mode 下载与上传 <br>
@@ -6,7 +8,7 @@
 ## How to use in Linux terminal
 gcc myserver.c -o myserver -lcrypt  <br>
 sudo ./myserver  <br>
-还没学会写makefile
+还没学会写makefile <br>
 使用vsftpd连接至local服务器 ftp 127.0.0.1 <br>
 
 ## FTP基本框架
